@@ -33,6 +33,8 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "geometry_msgs/msg/wrench_stamped.hpp"
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+#include <livox_ros_driver2/msg/custom_point.hpp>
 
 #include <Stonefish/entities/animation/ManualTrajectory.h>
 #include <Stonefish/entities/forcefields/Uniform.h>
@@ -72,6 +74,13 @@
 #include <Stonefish/actuators/VariableBuoyancy.h>
 #include <Stonefish/actuators/Light.h>
 #include <Stonefish/core/Robot.h>
+
+#include <Stonefish/sensors/scalar/Lidar.h> 
+#include <Stonefish/sensors/scalar/LidarGPU.h>
+#include <Stonefish/sensors/scalar/LivoxMid360CPU.h>
+
+#include <sensor_msgs/msg/point_cloud2.hpp>
+#include <sensor_msgs/point_cloud2_iterator.hpp>
 
 using namespace std::placeholders;
 
@@ -204,7 +213,8 @@ void ROS2SimulationManager::DestroyScenario()
 }
 	
 void ROS2SimulationManager::SimulationStepCompleted(Scalar timeStep)
-{
+{   
+    sim_time_ns += (uint64_t) llround(double(timeStep) * 1e9);
     (void)timeStep; // Suppress warning
 
     ////////////////////////////////////////SENSORS//////////////////////////////////////////////
@@ -215,13 +225,13 @@ void ROS2SimulationManager::SimulationStepCompleted(Scalar timeStep)
         if(!sensor->isNewDataAvailable())
             continue;
 
-        if(sensor->getType() != SensorType::VISION)
+        if(sensor->getType() != SensorType::VISION && sensor->getType() != SensorType::LIDAR)
         {
             if(pubs_.find(sensor->getName()) == pubs_.end())
                 continue;
 
             switch(((ScalarSensor*)sensor)->getScalarSensorType())
-            {
+            {   
                 case ScalarSensorType::ACC:
                     interface_->PublishAccelerometer(pubs_.at(sensor->getName()), (Accelerometer*)sensor);
                     break;
@@ -231,7 +241,7 @@ void ROS2SimulationManager::SimulationStepCompleted(Scalar timeStep)
                     break;
 
                 case ScalarSensorType::IMU:
-                    interface_->PublishIMU(pubs_.at(sensor->getName()), (IMU*)sensor);
+                    interface_->PublishIMU(pubs_.at(sensor->getName()), (IMU*)sensor, sim_time_ns);
                     break;
 
                 case ScalarSensorType::ODOM:
@@ -1365,6 +1375,84 @@ void ROS2SimulationManager::LightService(const std_srvs::srv::SetBool::Request::
     else
         res->message = "Light turned off.";
     res->success = true;
+}
+
+// -------------------------------------------------------------
+// IMPLEMENTACIÓN DEL LIDAR 
+// -------------------------------------------------------------
+void ROS2SimulationManager::LidarCallback(const std::vector<sf::LidarPoint>& points, 
+                                          rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
+                                          std::string frame_id)
+{
+    if (!pub) return;
+
+    sensor_msgs::msg::PointCloud2 msg;
+    msg.header.stamp = nh_->get_clock()->now();
+    msg.header.frame_id = frame_id; 
+
+    msg.height = 1; 
+    msg.width = points.size();
+    msg.is_dense = true;
+    msg.is_bigendian = false;
+
+    sensor_msgs::PointCloud2Modifier modifier(msg);
+    modifier.setPointCloud2Fields(4, 
+        "x", 1, sensor_msgs::msg::PointField::FLOAT32,
+        "y", 1, sensor_msgs::msg::PointField::FLOAT32,
+        "z", 1, sensor_msgs::msg::PointField::FLOAT32,
+        "intensity", 1, sensor_msgs::msg::PointField::FLOAT32);
+    
+    modifier.resize(points.size());
+
+    sensor_msgs::PointCloud2Iterator<float> iter_x(msg, "x");
+    sensor_msgs::PointCloud2Iterator<float> iter_y(msg, "y");
+    sensor_msgs::PointCloud2Iterator<float> iter_z(msg, "z");
+    sensor_msgs::PointCloud2Iterator<float> iter_i(msg, "intensity");
+
+    for (const auto& p : points)
+    {
+        *iter_x = p.x;
+        *iter_y = p.y;
+        *iter_z = p.z;
+        *iter_i = p.intensity;
+
+        ++iter_x; ++iter_y; ++iter_z; ++iter_i;
+    }
+
+    pub->publish(msg);
+}
+
+void ROS2SimulationManager::LivoxCallback(
+    uint64_t timebase_ns,
+    uint8_t lidar_id,
+    const std::vector<sf::LivoxPoint>& pts,
+    rclcpp::Publisher<livox_ros_driver2::msg::CustomMsg>::SharedPtr pub,
+    const std::string& frame_id)
+{
+    if(!pub) return;
+
+    livox_ros_driver2::msg::CustomMsg msg;
+    msg.header.stamp = rclcpp::Time(timebase_ns);   // scan start
+    msg.header.frame_id = frame_id;
+
+    msg.timebase  = timebase_ns;                    // “time of first point” :contentReference[oaicite:8]{index=8}
+    msg.point_num = (uint32_t)pts.size();
+    msg.lidar_id  = lidar_id;
+    msg.rsvd[0] = msg.rsvd[1] = msg.rsvd[2] = 0;
+
+    msg.points.resize(pts.size());
+    for(size_t i=0; i<pts.size(); ++i)
+    {
+        auto& o = msg.points[i];
+        const auto& p = pts[i];
+        o.offset_time  = p.offset_time;             // ns relative to timebase :contentReference[oaicite:9]{index=9}
+        o.x = p.x; o.y = p.y; o.z = p.z;
+        o.reflectivity = p.reflectivity;
+        o.tag  = p.tag;
+        o.line = p.line;
+    }
+
+    pub->publish(msg);
 }
 
 }

@@ -26,12 +26,14 @@
 #ifndef __Stonefish_ROS2Interface__
 #define __Stonefish_ROS2Interface__
 
+
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 #include "sensor_msgs/msg/camera_info.hpp"
 #include "tf2_ros/transform_broadcaster.h"
 
 #include <Stonefish/StonefishCommon.h>
+#include <cstdint> 
 
 namespace sf
 {
@@ -67,7 +69,7 @@ namespace sf
         void PublishTF(std::unique_ptr<tf2_ros::TransformBroadcaster>& br, const sf::Transform& T, const rclcpp::Time& t, const std::string &frame_id, const std::string &child_frame_id) const;
         void PublishAccelerometer(rclcpp::PublisherBase::SharedPtr pub, Accelerometer* acc) const;
         void PublishGyroscope(rclcpp::PublisherBase::SharedPtr pub, Gyroscope* gyro) const;
-        void PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu) const;
+        void PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu, uint64_t sim_time_ns) const; 
         void PublishPressure(rclcpp::PublisherBase::SharedPtr pub, Pressure* press) const;
         void PublishDVL(rclcpp::PublisherBase::SharedPtr pub, DVL* dvl) const;
         void PublishDVLAltitude(rclcpp::PublisherBase::SharedPtr pub, DVL* dvl) const;

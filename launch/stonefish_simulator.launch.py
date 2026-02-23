@@ -40,6 +40,8 @@ def generate_launch_description():
         'rendering_quality',
         default_value = 'high'
     )
+    
+    use_sim_time_arg = DeclareLaunchArgument('use_sim_time', default_value='true')
 
     stonefish_simulator_node = Node(
             package='stonefish_ros2',
@@ -57,6 +59,7 @@ def generate_launch_description():
         simulation_rate_arg,
         window_res_x_arg,
         window_res_y_arg,
+        use_sim_time_arg,
         rendering_quality_arg,
         stonefish_simulator_node
     ])

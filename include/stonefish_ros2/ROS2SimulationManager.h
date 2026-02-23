@@ -44,8 +44,15 @@
 #include "stonefish_ros2/srv/sonar_settings2.hpp"
 #include "stonefish_ros2/srv/respawn.hpp"
 
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+#include "Stonefish/sensors/scalar/LivoxMid360CPU.h"   
+
 #include <Stonefish/core/SimulationManager.h>
 #include <Stonefish/actuators/Servo.h>
+
+#include <Stonefish/sensors/scalar/Lidar.h>
+#include <Stonefish/sensors/scalar/LidarGPU.h>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 namespace sf
 {
@@ -172,7 +179,18 @@ namespace sf
                             std_srvs::srv::SetBool::Response::SharedPtr res, Light* light);
         void CommCallback(const std_msgs::msg::String::SharedPtr msg, Comm* comm);
 
+        void LidarCallback(const std::vector<sf::LidarPoint>& points, 
+                           rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr pub,
+                           std::string frame_id);
+
+        void LivoxCallback(uint64_t timebase_ns,
+            uint8_t lidar_id,
+            const std::vector<sf::LivoxPoint>& pts,
+            rclcpp::Publisher<livox_ros_driver2::msg::CustomMsg>::SharedPtr pub,
+            const std::string& frame_id);
+
     protected:
+        uint64_t sim_time_ns = 0;        
         std::string scenarioPath_;
         std::vector<std::shared_ptr<ROS2Robot>> rosRobots_;
         std::shared_ptr<rclcpp::Node> nh_;

@@ -22,6 +22,8 @@ find_package(image_transport REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Stonefish REQUIRED 1.6.0)
+find_package(livox_ros_driver2 REQUIRED)
+
 
 # messages
 rosidl_generate_interfaces(${PROJECT_NAME}
@@ -70,7 +72,9 @@ ament_target_dependencies(stonefish_ros2_interface
  image_transport
  tf2
  tf2_ros
+ livox_ros_driver2
 )
+
 ament_export_libraries(stonefish_ros2_interface)
 ament_export_include_directories(include)
 

@@ -38,6 +38,8 @@
 #include "geometry_msgs/msg/wrench_stamped.hpp"
 #include "geometry_msgs/msg/accel_with_covariance_stamped.hpp"
 #include "geometry_msgs/msg/twist_with_covariance_stamped.hpp"
+#include <livox_ros_driver2/msg/custom_msg.hpp>
+
 #include "sensor_msgs/msg/joint_state.hpp"
 #include "sensor_msgs/msg/imu.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
@@ -74,6 +76,11 @@
 #include <Stonefish/actuators/VariableBuoyancy.h>
 #include <Stonefish/actuators/SuctionCup.h>
 #include <Stonefish/sensors/ScalarSensor.h>
+#include <Stonefish/sensors/scalar/Lidar.h>
+
+#include <Stonefish/sensors/scalar/LidarGPU.h>
+#include <Stonefish/sensors/scalar/LivoxMid360CPU.h>
+
 #include <Stonefish/sensors/vision/ColorCamera.h>
 #include <Stonefish/sensors/vision/DepthCamera.h>
 #include <Stonefish/sensors/vision/ThermalCamera.h>
@@ -758,6 +765,60 @@ Sensor* ROS2ScenarioParser::ParseSensor(XMLElement* element, const std::string& 
                 }
             }
                 break;
+                
+            case SensorType::LIDAR:
+            {
+                const char* pubTopic = nullptr;
+                const char* frameIdC = nullptr;
+                XMLElement* item = element->FirstChildElement("ros_publisher");
+
+                if(item && item->QueryStringAttribute("topic", &pubTopic) == XML_SUCCESS)
+                {
+                    if(item->QueryStringAttribute("frame_id", &frameIdC) != XML_SUCCESS)
+                        frameIdC = "blueboat/lidar_front";
+
+                    const std::string topic(pubTopic);
+                    const std::string frame_id(frameIdC);
+
+                    // --- LIVOX: CustomMsg ---
+                    if (auto* livox = dynamic_cast<sf::LivoxMid360CPU*>(sens))
+                    {
+                        auto qos = rclcpp::QoS(rclcpp::KeepLast(10))
+                                    .reliable()
+                                    .durability_volatile();
+
+                        auto pub = nh_->create_publisher<livox_ros_driver2::msg::CustomMsg>(
+                            topic, qos);
+
+                        pubs[sens->getName()] = pub;  // ideal: PublisherBase::SharedPtr
+
+                        auto cb = [sim, pub, frame_id]
+                                (uint64_t timebase_ns, uint8_t lidar_id, const std::vector<sf::LivoxPoint>& pts)
+                        {
+                            sim->LivoxCallback(timebase_ns, lidar_id, pts, pub, frame_id);
+                        };
+
+                        livox->setResponseCallback(cb);
+}
+                    // --- LIDAR normal: PointCloud2 ---
+                    else
+                    {
+                        auto pub = nh_->create_publisher<sensor_msgs::msg::PointCloud2>(topic, 10);
+                        pubs[sens->getName()] = pub;
+
+                        auto cb = std::bind(&ROS2SimulationManager::LidarCallback,
+                                            sim, std::placeholders::_1, pub, frame_id);
+
+                        if (auto* lidar_gpu = dynamic_cast<sf::LidarGPU*>(sens))
+                            lidar_gpu->setResponseCallback(cb);
+                        else if (auto* lidar_cpu = dynamic_cast<sf::Lidar*>(sens))
+                            lidar_cpu->setResponseCallback(cb);
+                        else
+                            RCLCPP_ERROR(nh_->get_logger(), "LIDAR sensor '%s' is not Lidar/LidarGPU/Livox", sens->getName().c_str());
+                    }
+                }
+            }
+            break;
 
             case SensorType::LINK:
             {

@@ -142,11 +142,13 @@ void ROS2Interface::PublishGyroscope(rclcpp::PublisherBase::SharedPtr pub, Gyros
     std::static_pointer_cast<rclcpp::Publisher<geometry_msgs::msg::TwistWithCovarianceStamped>>(pub)->publish(msg);
 }
 
-void ROS2Interface::PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu) const
+
+void ROS2Interface::PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu, uint64_t sim_time_ns) const
 {
     Sample s = imu->getLastSample();
     sf::Vector3 rpy = sf::Vector3(s.getValue(0), s.getValue(1), s.getValue(2));
     sf::Quaternion quat(rpy.z(), rpy.y(), rpy.x());
+
     sf::Vector3 angleStdDev = sf::Vector3(imu->getSensorChannelDescription(0).stdDev,
                                           imu->getSensorChannelDescription(1).stdDev,
                                           imu->getSensorChannelDescription(2).stdDev);
@@ -156,10 +158,12 @@ void ROS2Interface::PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu) c
     sf::Vector3 accStdDev = sf::Vector3(imu->getSensorChannelDescription(6).stdDev,
                                         imu->getSensorChannelDescription(7).stdDev,
                                         imu->getSensorChannelDescription(8).stdDev);
-    //Variance is sigma^2!
+
     sensor_msgs::msg::Imu msg;
-    msg.header.stamp = nh_->get_clock()->now();    
+
+    msg.header.stamp = rclcpp::Time(sim_time_ns);
     msg.header.frame_id = imu->getName();
+
     msg.orientation.x = quat.x();
     msg.orientation.y = quat.y();
     msg.orientation.z = quat.z();
@@ -167,18 +171,21 @@ void ROS2Interface::PublishIMU(rclcpp::PublisherBase::SharedPtr pub, IMU* imu) c
     msg.orientation_covariance[0] = angleStdDev.getX() * angleStdDev.getX();
     msg.orientation_covariance[4] = angleStdDev.getY() * angleStdDev.getY();
     msg.orientation_covariance[8] = angleStdDev.getZ() * angleStdDev.getZ();
+
     msg.angular_velocity.x = s.getValue(3);
     msg.angular_velocity.y = s.getValue(4);
     msg.angular_velocity.z = s.getValue(5);
     msg.angular_velocity_covariance[0] = avelocityStdDev.getX() * avelocityStdDev.getX();
     msg.angular_velocity_covariance[4] = avelocityStdDev.getY() * avelocityStdDev.getY();
     msg.angular_velocity_covariance[8] = avelocityStdDev.getZ() * avelocityStdDev.getZ();
+
     msg.linear_acceleration.x = s.getValue(6);
     msg.linear_acceleration.y = s.getValue(7);
     msg.linear_acceleration.z = s.getValue(8);
     msg.linear_acceleration_covariance[0] = accStdDev.getX() * accStdDev.getX();
     msg.linear_acceleration_covariance[4] = accStdDev.getY() * accStdDev.getY();
     msg.linear_acceleration_covariance[8] = accStdDev.getZ() * accStdDev.getZ();
+
     std::static_pointer_cast<rclcpp::Publisher<sensor_msgs::msg::Imu>>(pub)->publish(msg);
 }
 
@@ -694,7 +701,7 @@ void ROS2Interface::PublishEventBasedCamera(rclcpp::PublisherBase::SharedPtr pub
         msg.events[i].x = (unsigned int)(data[i*2] >> 16);
         msg.events[i].y = (unsigned int)(data[i*2] & 0xFFFF); 
         //Next 4 bytes - polarity and time
-        msg.events[i].ts = msg.header.stamp + rclcpp::Duration(0, abs(data[i*2+1]));
+        msg.events[i].ts = rclcpp::Time(msg.header.stamp) + rclcpp::Duration(0, abs(data[i*2+1]));
         msg.events[i].polarity = data[i*2+1] > 0;
     }
     std::static_pointer_cast<rclcpp::Publisher<stonefish_ros2::msg::EventArray>>(pub)->publish(msg);
